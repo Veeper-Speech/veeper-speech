@@ -2,7 +2,7 @@
 name = "veeper-speech"
 version = "0.3.1"
 description = ""
-authors = ["avdonin.pb@yandex.ru"]
+authors = ["Igor Avdonin <avdonin.pb@yandex.ru>"]
 readme = "README.md"
 packages = [{include = "veespeech"}]
 
@@ -18,7 +18,7 @@ name = "veeper-speech"
 version = "0.3.1"
 description = ""
 authors = [
-    {name = "avdonin.pb@yandex.ru"}
+    {name = "Igor Avdonin", email = "avdonin.pb@yandex.ru"}
 ]
 readme = "README.md"
 requires-python = ">=3.10,<3.14"
