@@ -4,9 +4,9 @@
 """
 
 from .exceptions import AudioProcessingError, ModelLoadError, SpeechRecognitionError
-from .faster_whisper import FasterWhisperRecognizer
-from .model_base import SpeechRecognizer
-from .whisper import WhisperRecognizer
+from .models.faster_whisper import FasterWhisperRecognizer
+from .models.model_base import SpeechRecognizer
+from .models.whisper import WhisperRecognizer
 
 __all__ = [
     "AudioProcessingError",

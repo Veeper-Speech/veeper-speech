@@ -10,7 +10,7 @@ import torch.nn
 from faster_whisper import WhisperModel
 
 from veespeech import AudioProcessingError, FasterWhisperRecognizer, ModelLoadError, WhisperRecognizer
-from veespeech.model_base import SpeechRecognizer
+from veespeech.models.model_base import SpeechRecognizer
 
 
 def _read_audio_bytes(audio_file: str) -> bytes:

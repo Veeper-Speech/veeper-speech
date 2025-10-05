@@ -3,11 +3,11 @@ from pathlib import Path
 from typing import Any, Optional
 
 import torch
-import torch.nn
-import whisper
+from faster_whisper import WhisperModel
 
-from .exceptions import ModelLoadError
-from .file_utils import temporary_audio_file
+from veespeech.exceptions import ModelLoadError
+from veespeech.file_utils import temporary_audio_file
+
 from .model_base import SpeechRecognizer
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ DEFAULT_BEAM_SIZE = 5
 DEFAULT_TEMPERATURE = 0.0
 
 
-class WhisperRecognizer(SpeechRecognizer):
+class FasterWhisperRecognizer(SpeechRecognizer):
     def __init__(
         self,
         model_name: str = DEFAULT_MODEL_NAME,
@@ -26,7 +26,7 @@ class WhisperRecognizer(SpeechRecognizer):
         device: Optional[str] = None,
         weights_directory: Optional[str | Path] = None,
     ) -> None:
-        """Инициализирует распознаватель Whisper.
+        """Инициализирует распознаватель FasterWhisper.
 
         Parameters:
             model_name: Имя модели Whisper (например, "tiny", "base", "small").
@@ -37,7 +37,7 @@ class WhisperRecognizer(SpeechRecognizer):
                 "cpu".
             weights_directory: Директория для загрузки весов модели.
                 По умолчанию None, в этом случае используется директория
-                по умолчанию openai-whisper.
+                по умолчанию faster-whisper.
         """
         self._model_name = model_name
         self._language = language
@@ -52,11 +52,14 @@ class WhisperRecognizer(SpeechRecognizer):
                 weights_directory=self._weights_directory,
             )
             logger.info(
-                "WhisperRecognizer инициализирован с моделью '%s' на устройстве '%s'", self._model_name, self._device
+                "FasterWhisperRecognizer инициализирован с моделью '%s' на устройстве '%s'",
+                self._model_name,
+                self._device,
             )
         except Exception as e:
             raise ModelLoadError(
-                f"Не удалось загрузить модель Whisper '{self._model_name}' " f"на устройстве '{self._device}': {e}"
+                f"Не удалось загрузить модель FasterWhisper '{self._model_name}' "
+                f"на устройстве '{self._device}': {e}"
             ) from e
 
     def _determine_device(self, device: Optional[str]) -> str:
@@ -87,30 +90,34 @@ class WhisperRecognizer(SpeechRecognizer):
             dict: Словарь с параметрами для whisper.transcribe().
         """
         return {
-            "fp16": self._device == "cuda",  # fp16 имеет смысл только на GPU
-            "task": "transcribe",
+            "beam_size": DEFAULT_BEAM_SIZE,
             "temperature": DEFAULT_TEMPERATURE,
             "condition_on_previous_text": False,
-            "without_timestamps": True,
-            "beam_size": DEFAULT_BEAM_SIZE,
             "language": self._language,
         }
 
-    def _extract_text_from_result(self, result: Any) -> str:
+    def _extract_text_from_result(self, segments: list[Any]) -> str:
         """Извлекает текст из результата транскрипции.
 
         Parameters:
-            result: Результат от whisper.transcribe().
+            segments: Список сегментов от faster_whisper.
 
         Returns:
             str: Извлеченный и очищенный текст.
         """
-        text = result.get("text", "") if isinstance(result, dict) else ""
-        text = text if isinstance(text, str) else str(text)
-        return text.strip()
+        if not segments:
+            return ""
+
+        # Объединяем текст из всех сегментов
+        text_parts = []
+        for segment in segments:
+            if hasattr(segment, "text") and segment.text:
+                text_parts.append(segment.text.strip())
+
+        return " ".join(text_parts).strip()
 
     def recognize(self, audio_data: bytes) -> str:
-        """Распознаёт речь из аудио байтов, используя openai-whisper.
+        """Распознаёт речь из аудио байтов, используя faster-whisper.
 
         Parameters:
             audio_data: Сырые байты аудио. Поддерживаются WAV, MP3, OGG/Opus
@@ -129,13 +136,13 @@ class WhisperRecognizer(SpeechRecognizer):
         with temporary_audio_file(audio_data) as tmp_path:
             decode_kwargs = self._create_transcription_params()
             logger.debug(
-                "Запускаем транскрипцию с параметрами: fp16=%s, language=%s",
-                decode_kwargs.get("fp16"),
+                "Запускаем транскрипцию с параметрами: beam_size=%s, language=%s",
+                decode_kwargs.get("beam_size"),
                 decode_kwargs.get("language"),
             )
 
-            result = self._model.transcribe(tmp_path, **decode_kwargs)
-            text = self._extract_text_from_result(result)
+            segments, _ = self._model.transcribe(tmp_path, **decode_kwargs)
+            text = self._extract_text_from_result(list(segments))
 
             logger.debug("Распознавание завершено, длина текста: %d символов", len(text))
             return text
@@ -151,16 +158,6 @@ class WhisperRecognizer(SpeechRecognizer):
 
         if key in _CACHED_MODELS:
             try:
-                # Пытаемся очистить память модели перед удалением из кеша
-                cached_model = _CACHED_MODELS[key]
-                if hasattr(cached_model, "cpu"):
-                    cached_model.cpu()  # Перемещаем на CPU, если была на GPU
-                if hasattr(cached_model, "to"):
-                    try:
-                        cached_model.to("cpu")  # Альтернативный способ
-                    except Exception as e:
-                        logger.debug("Не удалось переместить модель на CPU: %s", e)
-
                 # Очищаем кеш CUDA, если модель была на GPU
                 if self._device == "cuda":
                     try:
@@ -178,8 +175,8 @@ class WhisperRecognizer(SpeechRecognizer):
         self._model = None
 
     @classmethod
-    def prepare_model(cls, model_name: str, device: str, weights_directory: str | Path) -> torch.nn.Module:
-        """Подготавливает модель Whisper для использования.
+    def prepare_model(cls, model_name: str, device: str, weights_directory: str | Path) -> WhisperModel:
+        """Подготавливает модель FasterWhisper для использования.
 
         Parameters:
             model_name: Имя модели Whisper.
@@ -187,17 +184,17 @@ class WhisperRecognizer(SpeechRecognizer):
             weights_directory: Директория с весами модели.
 
         Returns:
-            torch.nn.Module: Загруженная модель Whisper.
+            WhisperModel: Загруженная модель FasterWhisper.
         """
         return _get_or_load_model(model_name=model_name, device=device, weights_directory=weights_directory)
 
 
 # --- Внутренняя реализация кеширования модели ---
-_CACHED_MODELS: dict[tuple[str, str, Optional[str]], object] = {}
+_CACHED_MODELS: dict[tuple[str, str, Optional[str]], WhisperModel] = {}
 
 
-def _get_or_load_model(model_name: str, device: str, weights_directory: Optional[str | Path] = None):
-    """Возвращает кэшированную модель Whisper или загружает новую.
+def _get_or_load_model(model_name: str, device: str, weights_directory: Optional[str | Path] = None) -> WhisperModel:
+    """Возвращает кэшированную модель FasterWhisper или загружает новую.
 
     Parameters:
         model_name: Имя модели Whisper.
@@ -205,7 +202,7 @@ def _get_or_load_model(model_name: str, device: str, weights_directory: Optional
         weights_directory: Директория для загрузки весов модели.
 
     Returns:
-        object: Экземпляр загруженной модели Whisper.
+        WhisperModel: Экземпляр загруженной модели FasterWhisper.
 
     Raises:
         ModelLoadError: Если не удалось загрузить модель.
@@ -216,7 +213,7 @@ def _get_or_load_model(model_name: str, device: str, weights_directory: Optional
     model = _CACHED_MODELS.get(key)
 
     if model is None:
-        logger.info("Загружаем модель Whisper '%s' на устройство '%s'", model_name, device)
+        logger.info("Загружаем модель FasterWhisper '%s' на устройство '%s'", model_name, device)
         if weights_directory:
             logger.info("Используем директорию для весов: '%s'", weights_directory)
         try:
@@ -225,12 +222,12 @@ def _get_or_load_model(model_name: str, device: str, weights_directory: Optional
             if weights_directory:
                 load_params["download_root"] = str(weights_directory)
 
-            model = whisper.load_model(model_name, **load_params)
+            model = WhisperModel(model_name, **load_params)
             _CACHED_MODELS[key] = model
             logger.debug("Модель '%s' успешно загружена и закеширована", model_name)
         except Exception as e:
             raise ModelLoadError(
-                f"Не удалось загрузить модель Whisper '{model_name}' " f"на устройстве '{device}': {e}"
+                f"Не удалось загрузить модель FasterWhisper '{model_name}' " f"на устройстве '{device}': {e}"
             ) from e
     else:
         logger.debug("Используем закешированную модель '%s' с устройства '%s'", model_name, device)

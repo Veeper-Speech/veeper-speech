@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "veeper-speech"
-version = "0.3.1"
+version = "0.3.2"
 description = ""
 authors = ["Igor Avdonin <avdonin.pb@yandex.ru>"]
 readme = "README.md"
@@ -15,7 +15,7 @@ transformers = ">=4.57.0,<5.0.0"
 
 [project]
 name = "veeper-speech"
-version = "0.3.1"
+version = "0.3.2"
 description = ""
 authors = [
     {name = "Igor Avdonin", email = "avdonin.pb@yandex.ru"}
