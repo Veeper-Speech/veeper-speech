@@ -29,18 +29,18 @@ jobs:
           pipx install poetry
           poetry --version
 
-      - name: Install dependencies (with dev)
+      - name: Install security tools
         run: |
-          poetry install --no-interaction --with dev
+          pipx install bandit safety
 
       - name: Run Bandit
         run: |
-          poetry run bandit -r veespeech -c pyproject.toml
+          pipx run bandit -r veespeech -c pyproject.toml
 
       - name: Export deps for Safety
         run: |
-          poetry export -f requirements.txt --with dev --without-hashes -o requirements.txt
+          pipx run poetry export -f requirements.txt --only dev --without-hashes -o requirements.txt
 
       - name: Run Safety
         run: |
-          poetry run safety check -r requirements.txt --full-report
+          pipx run safety check -r requirements.txt --full-report
