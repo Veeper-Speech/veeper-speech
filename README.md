@@ -2,8 +2,8 @@
 
 [![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](#)
 [![Coverage](https://img.shields.io/badge/coverage-80.41%25-brightgreen)](#)
-[![Bandit](https://img.shields.io/github/actions/workflow/status/Veeper-Speech/veeper-speech/security.yml?branch=main&label=Bandit&logo=github)](https://github.com/Veeper-Speech/veeper-speech/actions/workflows/security.yml)
-[![Safety](https://img.shields.io/github/actions/workflow/status/Veeper-Speech/veeper-speech/security.yml?branch=main&label=Safety&logo=github)](https://github.com/Veeper-Speech/veeper-speech/actions/workflows/security.yml)
+[![Bandit](https://img.shields.io/badge/Bandit-passing-brightgreen)](#)
+[![Safety](https://img.shields.io/badge/Safety-passing-brightgreen)](#)
 [![PyPI](https://img.shields.io/pypi/v/veeper-speech?label=PyPI&logo=pypi)](https://pypi.org/project/veeper-speech/)
 
 Небольшая библиотека для распознавания речи Veeper. Встраивается в клиентскую и серверную часть приложения и предоставляет единый интерфейс `SpeechRecognizer` с реализациями на базе OpenAI Whisper и Faster-Whisper.

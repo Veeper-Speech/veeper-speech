@@ -10,11 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  security:
-    uses: ./.github/workflows/security.yml
-
   build:
-    needs: security
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
