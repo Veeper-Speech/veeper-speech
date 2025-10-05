@@ -24,4 +24,5 @@ coverage.xml
 .python-version
 node_modules/
 .vscode/
+poetry.lock
 .env
