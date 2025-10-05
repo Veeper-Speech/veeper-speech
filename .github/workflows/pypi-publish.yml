@@ -1,0 +1,64 @@
+name: Publish veespeech to PyPI
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  security:
+    uses: ./.github/workflows/security.yml
+
+  build:
+    needs: security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        run: |
+          pipx install poetry==1.8.3
+          poetry --version
+
+      - name: Ensure version matches tag
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          FILE_VER=$(python -c 'import tomllib,sys; print(tomllib.loads(open("pyproject.toml","rb").read())["tool"]["poetry"]["version"])')
+          [ "$TAG" = "$FILE_VER" ] || { echo "pyproject.toml version $FILE_VER != tag $TAG"; exit 1; }
+
+      - name: Build package
+        run: poetry build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/*
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/veeper-speech
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+          skip-existing: true

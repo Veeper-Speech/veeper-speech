@@ -1,0 +1,46 @@
+name: Security checks
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "veespeech/**"
+      - ".github/workflows/security.yml"
+      - "pyproject.toml"
+      - "poetry.lock"
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  security:
+    name: Security checks (Bandit & Safety)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        run: |
+          pipx install poetry
+          poetry --version
+
+      - name: Install dependencies (with dev)
+        run: |
+          poetry install --no-interaction --with dev
+
+      - name: Run Bandit
+        run: |
+          poetry run bandit -r veespeech -c pyproject.toml
+
+      - name: Export deps for Safety
+        run: |
+          poetry export -f requirements.txt --with dev --without-hashes -o requirements.txt
+
+      - name: Run Safety
+        run: |
+          poetry run safety check -r requirements.txt --full-report
