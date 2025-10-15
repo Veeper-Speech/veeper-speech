@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "veeper-speech"
-version = "0.3.2"
+version = "0.3.3"
 description = ""
 authors = ["Igor Avdonin <avdonin.pb@yandex.ru>"]
 readme = "README.md"
@@ -9,13 +9,15 @@ packages = [{include = "veespeech"}]
 [tool.poetry.dependencies]
 python = ">=3.10,<3.14"
 openai-whisper = ">=20250625,<20250626"
-faster-whisper = ">=1.2.0,<2.0.0"
-soundfile = ">=0.13.1,<0.14.0"
-transformers = ">=4.57.0,<5.0.0"
+faster-whisper = ">=1.0.0,<2.0.0"
+soundfile = ">=0.13.0,<0.14.0"
+transformers = ">=4.0.0,<5.0.0"
+torch = ">2.0.0,<3.0.0"
+torchaudio = ">2.0.0,<3.0.0"
 
 [project]
 name = "veeper-speech"
-version = "0.3.2"
+version = "0.3.3"
 description = ""
 authors = [
     {name = "Igor Avdonin", email = "avdonin.pb@yandex.ru"}
@@ -27,38 +29,22 @@ dependencies = [
     "faster-whisper (>=1.2.0,<2.0.0)",
     "soundfile (>=0.13.1,<0.14.0)",
     "transformers (>=4.57.0,<5.0.0)",
-]
-
-[project.optional-dependencies]
-gpu = [
-    "torch==2.8.0",
-    "torchaudio==2.8.0",
-]
-cpu = [
-    "torch==2.8.0+cpu",
-    "torchaudio==2.8.0+cpu",
+    "torch (>=2.0.0,<3.0.0)",
+    "torchaudio (>=2.0.0,<3.0.0)",
 ]
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8.4.2,<9.0.0"
 pytest-cov = ">=7.0.0,<8.0.0"
-tox = ">=4.30.3,<5.0.0"
+tox = ">=4.31.0,<5.0.0"
 black = ">=25.9.0,<26.0.0"
-isort = ">=6.1.0,<7.0.0"
+isort = ">=7.0.0,<8.0.0"
 flake8 = ">=7.1.1,<8.0.0"
 bandit = ">=1.7.10,<2.0.0"
 safety = ">=3.2.0,<4.0.0"
 radon = ">=6.0.1,<7.0.0"
 mypy = ">=1.11.0,<2.0.0"
 
-[tool.poetry.group.gpu.dependencies]
-torch = ">=2.8.0,<3.0.0"
-torchaudio = ">=2.8.0,<3.0.0"
-
-
-[tool.poetry.group.cpu.dependencies]
-torch = "2.8.0+cpu"
-torchaudio = "2.8.0+cpu"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

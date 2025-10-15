@@ -10,12 +10,8 @@
 
 ## Установка
 
-Установите вариант под ваше окружение:
-
 ```bash
-pip install "veeper-speech[cpu]"
-# или
-pip install "veeper-speech[gpu]"
+pip install veeper-speech
 ```
 
 ## Пример использования
