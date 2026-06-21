@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "veeper-speech"
-version = "0.3.3"
+version = "0.4.0"
 description = ""
 authors = ["Igor Avdonin <avdonin.pb@yandex.ru>"]
 readme = "README.md"
@@ -14,10 +14,11 @@ soundfile = ">=0.13.0,<0.14.0"
 transformers = ">=4.0.0,<5.0.0"
 torch = ">2.0.0,<3.0.0"
 torchaudio = ">2.0.0,<3.0.0"
+requests = ">=2.31.0,<3.0.0"
 
 [project]
 name = "veeper-speech"
-version = "0.3.3"
+version = "0.4.0"
 description = ""
 authors = [
     {name = "Igor Avdonin", email = "avdonin.pb@yandex.ru"}
@@ -31,6 +32,7 @@ dependencies = [
     "transformers (>=4.57.0,<5.0.0)",
     "torch (>=2.0.0,<3.0.0)",
     "torchaudio (>=2.0.0,<3.0.0)",
+    "requests (>=2.31.0,<3.0.0)",
 ]
 
 [tool.poetry.group.dev.dependencies]
