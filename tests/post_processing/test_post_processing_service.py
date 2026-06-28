@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import Any
 
 import pytest
 
 from veespeech.post_processing.exceptions import PostProcessingError
+from veespeech.post_processing.prompts import SYSTEM_PROMPT
 from veespeech.post_processing.service import (
     MIN_TEXT_ENHANCEMENT_LENGTH,
     TextEnhancementService,
@@ -19,10 +21,14 @@ FAKE_KEY = "sk-test-not-real"
 
 @dataclass
 class RecordedCall:
+    prompt: str
     text: str
     api_key: str
     model: str
     timeout: float
+    image: str | None
+    temperature: float | None
+    reasoning: dict[str, Any] | None
 
 
 @dataclass
@@ -33,8 +39,30 @@ class RecordingClient:
     exception: Exception | None = None
     calls: list[RecordedCall] = field(default_factory=list)
 
-    def enhance_text(self, *, text: str, api_key: str, model: str, timeout: float) -> str | None:
-        self.calls.append(RecordedCall(text=text, api_key=api_key, model=model, timeout=timeout))
+    def call(
+        self,
+        *,
+        prompt: str,
+        text: str,
+        api_key: str,
+        model: str,
+        timeout: float,
+        image: str | None = None,
+        temperature: float | None = None,
+        reasoning: dict[str, Any] | None = None,
+    ) -> str | None:
+        self.calls.append(
+            RecordedCall(
+                prompt=prompt,
+                text=text,
+                api_key=api_key,
+                model=model,
+                timeout=timeout,
+                image=image,
+                temperature=temperature,
+                reasoning=reasoning,
+            )
+        )
         if self.exception is not None:
             raise self.exception
         return self.outcome
@@ -51,7 +79,7 @@ class TestServiceGating:
         settings = TextEnhancementSettings(
             enabled=True,
             api_key=FAKE_KEY,
-            model="deepseek/deepseek-v4-flash",
+            model="qwen/qwen3.6-flash",
             timeout=10.0,
         )
 
@@ -67,7 +95,7 @@ class TestServiceGating:
         settings = TextEnhancementSettings(
             enabled=False,
             api_key=FAKE_KEY,
-            model="deepseek/deepseek-v4-flash",
+            model="qwen/qwen3.6-flash",
             timeout=10.0,
         )
 
@@ -84,7 +112,7 @@ class TestServiceGating:
         settings = TextEnhancementSettings(
             enabled=True,
             api_key=api_key,
-            model="deepseek/deepseek-v4-flash",
+            model="qwen/qwen3.6-flash",
             timeout=10.0,
         )
 
@@ -100,7 +128,7 @@ class TestServiceGating:
         settings = TextEnhancementSettings(
             enabled=True,
             api_key=FAKE_KEY,
-            model="deepseek/deepseek-v4-flash",
+            model="qwen/qwen3.6-flash",
             timeout=10.0,
         )
 
@@ -123,7 +151,7 @@ class TestCustomMinLengthThresholds:
         settings = TextEnhancementSettings(
             enabled=True,
             api_key=FAKE_KEY,
-            model="deepseek/deepseek-v4-flash",
+            model="qwen/qwen3.6-flash",
             min_length=50,
             timeout=10.0,
         )
@@ -140,7 +168,7 @@ class TestCustomMinLengthThresholds:
         settings = TextEnhancementSettings(
             enabled=True,
             api_key=FAKE_KEY,
-            model="deepseek/deepseek-v4-flash",
+            model="qwen/qwen3.6-flash",
             min_length=50,
             timeout=10.0,
         )
@@ -157,7 +185,7 @@ class TestCustomMinLengthThresholds:
         settings = TextEnhancementSettings(
             enabled=True,
             api_key=FAKE_KEY,
-            model="deepseek/deepseek-v4-flash",
+            model="qwen/qwen3.6-flash",
             min_length=200,
             timeout=10.0,
         )
@@ -174,7 +202,7 @@ class TestCustomMinLengthThresholds:
         settings = TextEnhancementSettings(
             enabled=True,
             api_key=FAKE_KEY,
-            model="deepseek/deepseek-v4-flash",
+            model="qwen/qwen3.6-flash",
             min_length=200,
             timeout=10.0,
         )
@@ -188,7 +216,7 @@ class TestCustomMinLengthThresholds:
 class TestServiceOrchestrationAndFallback:
     """PP-05 service orchestration/fallback."""
 
-    def test_service_passes_original_text_stripped_key_model_and_timeout(self) -> None:
+    def test_service_passes_stripped_text_prompt_temperature_and_reasoning(self) -> None:
         client = RecordingClient(outcome="enhanced")
         service = TextEnhancementService(client=client)
         original = f"  {'x' * 101}  "
@@ -204,10 +232,13 @@ class TestServiceOrchestrationAndFallback:
         assert result == "enhanced"
         assert len(client.calls) == 1
         call = client.calls[0]
-        assert call.text is original
+        assert call.text == original.strip()
+        assert call.prompt == SYSTEM_PROMPT
         assert call.api_key == FAKE_KEY
         assert call.model == "custom/model"
         assert call.timeout == 12.5
+        assert call.temperature == 0.2
+        assert call.reasoning == {"effort": "none", "exclude": True}
 
     def test_service_returns_original_on_client_exception(self, caplog) -> None:
         client = RecordingClient(exception=PostProcessingError("openrouter failed"))
@@ -216,7 +247,7 @@ class TestServiceOrchestrationAndFallback:
         settings = TextEnhancementSettings(
             enabled=True,
             api_key=FAKE_KEY,
-            model="deepseek/deepseek-v4-flash",
+            model="qwen/qwen3.6-flash",
             timeout=10.0,
         )
 
@@ -234,13 +265,86 @@ class TestServiceOrchestrationAndFallback:
         settings = TextEnhancementSettings(
             enabled=True,
             api_key=FAKE_KEY,
-            model="deepseek/deepseek-v4-flash",
+            model="qwen/qwen3.6-flash",
             timeout=10.0,
         )
 
         result = service.enhance(original, settings)
 
         assert result is original
+
+
+class TestServiceScreenshotHandling:
+    """PP-05b screenshot forwarding and normalization."""
+
+    def test_text_only_call_passes_none_image(self) -> None:
+        client = RecordingClient(outcome="enhanced")
+        service = TextEnhancementService(client=client)
+        original = f"  {'x' * 101}  "
+        settings = TextEnhancementSettings(enabled=True, api_key=FAKE_KEY)
+
+        result = service.enhance(original, settings)
+
+        assert result == "enhanced"
+        assert len(client.calls) == 1
+        assert client.calls[0].image is None
+
+    def test_screenshot_forwarded_to_client_as_image(self) -> None:
+        client = RecordingClient(outcome="enhanced")
+        service = TextEnhancementService(client=client)
+        original = f"  {'x' * 101}  "
+        data_url = "data:image/png;base64,abc123"
+        settings = TextEnhancementSettings(enabled=True, api_key=FAKE_KEY)
+
+        result = service.enhance(original, settings, screenshot=data_url)
+
+        assert result == "enhanced"
+        assert len(client.calls) == 1
+        assert client.calls[0].image == data_url
+
+    def test_raw_base64_screenshot_normalized(self) -> None:
+        client = RecordingClient(outcome="enhanced")
+        service = TextEnhancementService(client=client)
+        original = f"  {'x' * 101}  "
+        settings = TextEnhancementSettings(enabled=True, api_key=FAKE_KEY)
+
+        service.enhance(original, settings, screenshot="  abc123  ")
+
+        assert client.calls[0].image == "data:image/png;base64,abc123"
+
+    def test_bytes_screenshot_normalized(self) -> None:
+        client = RecordingClient(outcome="enhanced")
+        service = TextEnhancementService(client=client)
+        original = f"  {'x' * 101}  "
+        settings = TextEnhancementSettings(enabled=True, api_key=FAKE_KEY)
+
+        service.enhance(original, settings, screenshot=b"\x00\x01\x02")
+
+        assert client.calls[0].image == "data:image/png;base64,AAEC"
+
+    @pytest.mark.parametrize("screenshot", [None, "", "   ", 123, []])
+    def test_blank_or_unsupported_screenshot_treated_as_absent(self, screenshot) -> None:
+        client = RecordingClient(outcome="enhanced")
+        service = TextEnhancementService(client=client)
+        original = f"  {'x' * 101}  "
+        settings = TextEnhancementSettings(enabled=True, api_key=FAKE_KEY)
+
+        service.enhance(original, settings, screenshot=screenshot)
+
+        assert client.calls[0].image is None
+
+    def test_screenshot_payload_not_logged_on_client_exception(self, caplog) -> None:
+        client = RecordingClient(exception=PostProcessingError("openrouter failed"))
+        service = TextEnhancementService(client=client)
+        original = f"  {'x' * 101}  "
+        settings = TextEnhancementSettings(enabled=True, api_key=FAKE_KEY)
+        screenshot = "data:image/png;base64,SECRETSCREENSHOT"
+
+        with caplog.at_level(logging.WARNING, logger="veespeech.post_processing.service"):
+            result = service.enhance(original, settings, screenshot=screenshot)
+
+        assert result is original
+        assert "SECRETSCREENSHOT" not in caplog.text
 
 
 def _assert_no_leaks(caplog_text: str, secret: str, full_text: str) -> None:

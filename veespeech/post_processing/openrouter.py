@@ -1,24 +1,18 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from typing import Any
 
 import requests
 
 from .exceptions import PostProcessingError
-from .prompts import build_text_enhancement_messages
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_CHAT_COMPLETIONS_URL = OPENROUTER_URL
-DEFAULT_TEXT_ENHANCEMENT_MODEL = "deepseek/deepseek-v4-flash"
-_TEXT_ENHANCEMENT_TEMPERATURE = 0.2
-_TEXT_ENHANCEMENT_REASONING = {"effort": "none", "exclude": True}
 
 
-@dataclass(slots=True)
 class OpenRouterClient:
-    """Thin client for the OpenRouter chat-completions endpoint.
+    """Thin generic client for the OpenRouter chat-completions endpoint.
 
     Parameters:
         session: An optional ``requests.Session``-like object. If omitted,
@@ -27,32 +21,64 @@ class OpenRouterClient:
             logged.
     """
 
-    session: Any | None = None
-    logger: logging.Logger | None = None
+    def __init__(
+        self,
+        session: Any | None = None,
+        logger: logging.Logger | None = None,
+    ) -> None:
+        self.session = session
+        self.logger = logger or logging.getLogger(__name__)
 
-    def __post_init__(self) -> None:
-        if self.logger is None:
-            self.logger = logging.getLogger(__name__)
-
-    def enhance_text(
+    def call(
         self,
         *,
         text: str,
+        prompt: str,
         api_key: str,
-        model: str = DEFAULT_TEXT_ENHANCEMENT_MODEL,
+        model: str,
         timeout: float = 30.0,
+        image: str | None = None,
+        temperature: float | None = None,
+        reasoning: dict[str, Any] | None = None,
     ) -> str:
-        """Send ``text`` to OpenRouter and return the enhanced text.
+        """Send a chat-completions request and return the model content.
+
+        Parameters:
+            text: User text. Passed as the user message content (plain or
+                alongside ``image``).
+            prompt: System prompt.
+            api_key: OpenRouter API key.
+            model: Model identifier.
+            timeout: HTTP timeout in seconds.
+            image: Optional image URL or data URL to include as visual context.
+            temperature: Optional sampling temperature.
+            reasoning: Optional reasoning configuration copied before use.
 
         Raises:
             PostProcessingError: When the request or response is invalid.
         """
-        payload = {
+        user_content: str | list[dict[str, Any]]
+        image_url = image.strip() if isinstance(image, str) else ""
+        if image_url:
+            user_content = [
+                {"type": "text", "text": text},
+                {"type": "image_url", "image_url": {"url": image_url}},
+            ]
+        else:
+            user_content = text
+
+        payload: dict[str, Any] = {
             "model": model,
-            "messages": build_text_enhancement_messages(text),
-            "temperature": _TEXT_ENHANCEMENT_TEMPERATURE,
-            "reasoning": _TEXT_ENHANCEMENT_REASONING.copy(),
+            "messages": [
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": user_content},
+            ],
         }
+        if temperature is not None:
+            payload["temperature"] = temperature
+        if reasoning is not None:
+            payload["reasoning"] = reasoning.copy()
+
         response = self._post(api_key=api_key, payload=payload, timeout=timeout)
         return _extract_content(response)
 
@@ -130,7 +156,6 @@ def _extract_content(response: Any) -> str:
 
 
 __all__ = [
-    "DEFAULT_TEXT_ENHANCEMENT_MODEL",
     "OPENROUTER_CHAT_COMPLETIONS_URL",
     "OPENROUTER_URL",
     "OpenRouterClient",

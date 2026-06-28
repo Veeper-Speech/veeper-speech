@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import base64
 import logging
 from dataclasses import dataclass
 from typing import Any
 
-from .openrouter import DEFAULT_TEXT_ENHANCEMENT_MODEL, OpenRouterClient
+from .openrouter import OpenRouterClient
+from .prompts import SYSTEM_PROMPT
 
+DEFAULT_TEXT_ENHANCEMENT_MODEL = "qwen/qwen3.6-flash"
 MIN_TEXT_ENHANCEMENT_LENGTH = 100
 DEFAULT_TEXT_ENHANCEMENT_TIMEOUT_SECONDS = 30.0
+_TEXT_ENHANCEMENT_TEMPERATURE = 0.2
+_TEXT_ENHANCEMENT_REASONING = {"effort": "none", "exclude": True}
 
 
 @dataclass(slots=True)
@@ -55,7 +60,12 @@ class TextEnhancementService:
         self._client_cls = client_cls
         self._logger = logger or logging.getLogger(__name__)
 
-    def enhance(self, text: str, settings: TextEnhancementSettings | Any) -> str:
+    def enhance(
+        self,
+        text: str,
+        settings: TextEnhancementSettings | Any,
+        screenshot: str | bytes | bytearray | memoryview | None = None,
+    ) -> str:
         """Return enhanced ``text`` when appropriate, otherwise ``text``.
 
         The original object is returned unchanged whenever enhancement is
@@ -80,14 +90,19 @@ class TextEnhancementService:
             _get_setting(settings, "model", "text_enhancement_model", default=DEFAULT_TEXT_ENHANCEMENT_MODEL)
         )
         timeout = _get_setting(settings, "timeout", default=DEFAULT_TEXT_ENHANCEMENT_TIMEOUT_SECONDS)
+        normalized_screenshot = _normalize_screenshot(screenshot)
 
         try:
             client = self._client if self._client is not None else self._client_cls()
-            enhanced = client.enhance_text(
-                text=text,
+            enhanced = client.call(
+                prompt=SYSTEM_PROMPT,
+                text=stripped_text,
                 api_key=api_key,
                 model=model,
                 timeout=timeout,
+                image=normalized_screenshot,
+                temperature=_TEXT_ENHANCEMENT_TEMPERATURE,
+                reasoning=_TEXT_ENHANCEMENT_REASONING.copy(),
             )
         except Exception as exc:  # noqa: BLE001
             self._logger.warning(
@@ -138,7 +153,46 @@ def _normalize_min_length(value: Any) -> int:
     return MIN_TEXT_ENHANCEMENT_LENGTH
 
 
+def _normalize_screenshot(screenshot: Any) -> str | None:
+    """Normalize a screenshot value into an image URL/data URL or None.
+
+    Supported inputs:
+        - ``data:image/...;base64,...`` data URLs (returned as-is).
+        - ``http://`` or ``https://`` URLs (returned as-is).
+        - Raw base64 strings (wrapped as ``data:image/png;base64,<value>``).
+        - ``bytes``/``bytearray``/``memoryview`` (base64-encoded and wrapped).
+
+    Blank or unsupported values are treated as absent (``None``).
+    """
+    if screenshot is None:
+        return None
+
+    if isinstance(screenshot, (bytes, bytearray, memoryview)):
+        try:
+            encoded = base64.b64encode(screenshot).decode("ascii")
+        except Exception:  # noqa: BLE001
+            return None
+        if not encoded:
+            return None
+        return f"data:image/png;base64,{encoded}"
+
+    if not isinstance(screenshot, str):
+        return None
+
+    stripped = screenshot.strip()
+    if not stripped:
+        return None
+
+    lower = stripped.lower()
+    if lower.startswith(("data:image/", "http://", "https://")):
+        return stripped
+
+    # Treat remaining non-blank strings as raw base64.
+    return f"data:image/png;base64,{stripped}"
+
+
 __all__ = [
+    "DEFAULT_TEXT_ENHANCEMENT_MODEL",
     "DEFAULT_TEXT_ENHANCEMENT_TIMEOUT_SECONDS",
     "MIN_TEXT_ENHANCEMENT_LENGTH",
     "TextEnhancementService",

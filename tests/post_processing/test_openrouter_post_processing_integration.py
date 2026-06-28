@@ -12,7 +12,7 @@ import os
 import pytest
 
 RUN_FLAG = "VEEPER_RUN_OPENROUTER_INTEGRATION"
-DEFAULT_MODEL = "deepseek/deepseek-v4-flash"
+DEFAULT_MODEL = "qwen/qwen3.6-flash"
 
 
 def _should_skip_openrouter_integration() -> bool:
@@ -27,11 +27,13 @@ def _should_skip_openrouter_integration() -> bool:
 )
 def test_openrouter_post_processing_preserves_sentinels(caplog) -> None:
     from veespeech.post_processing.openrouter import OpenRouterClient
-    from veespeech.post_processing.prompts import build_text_enhancement_messages
+    from veespeech.post_processing.prompts import SYSTEM_PROMPT
 
     api_key = os.environ["OPENROUTER_API_KEY"].strip()
     model = os.getenv("OPENROUTER_MODEL", DEFAULT_MODEL)
     timeout = 60.0
+    temperature = 0.2
+    reasoning = {"effort": "none", "exclude": True}
 
     # Safe synthetic text with explicit sentinels to verify preservation.
     text = (
@@ -42,11 +44,14 @@ def test_openrouter_post_processing_preserves_sentinels(caplog) -> None:
     client = OpenRouterClient()
 
     with caplog.at_level(logging.DEBUG, logger="veespeech.post_processing.openrouter"):
-        result = client.enhance_text(
-            text=text,
+        result = client.call(
+            prompt=SYSTEM_PROMPT,
+            text=text.strip(),
             api_key=api_key,
             model=model,
             timeout=timeout,
+            temperature=temperature,
+            reasoning=reasoning,
         )
 
     assert isinstance(result, str)
@@ -56,8 +61,7 @@ def test_openrouter_post_processing_preserves_sentinels(caplog) -> None:
     assert "2026" in result
 
     # The raw prompt must be built from the stripped input but sentinels are still present.
-    messages = build_text_enhancement_messages(text)
-    user_content = messages[-1]["content"]
+    user_content = text.strip()
     assert "Alice" in user_content
     assert "42" in user_content
     assert "2026" in user_content

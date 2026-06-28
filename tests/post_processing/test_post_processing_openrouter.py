@@ -76,6 +76,18 @@ class TestPromptContract:
             "facts",
             "names",
             "numbers",
+            "visual context",
+            "application",
+            "IDE",
+            "document editor",
+            "chat",
+            "communication style",
+            "layout",
+            "indentation",
+            "line breaks",
+            "formatting",
+            "resolve ambiguity",
+            "preserve structure",
             "no new facts",
             "Return only the final text",
         ]
@@ -91,26 +103,55 @@ class TestPromptContract:
         assert messages[0] == {"role": "system", "content": SYSTEM_PROMPT}
         assert messages[1] == {"role": "user", "content": raw.strip()}
 
+    def test_data_url_screenshot_produces_multimodal_content(self) -> None:
+        raw = "  text with screenshot  "
+        data_url = "data:image/png;base64,abc123"
+        messages = build_text_enhancement_messages(raw, screenshot=data_url)
+
+        assert len(messages) == 2
+        assert messages[0] == {"role": "system", "content": SYSTEM_PROMPT}
+        user_message = messages[1]
+        assert user_message["role"] == "user"
+        content = user_message["content"]
+        assert isinstance(content, list)
+        assert content[0] == {"type": "text", "text": raw.strip()}
+        assert content[1] == {"type": "image_url", "image_url": {"url": data_url}}
+
+    def test_text_only_backward_compatibility(self) -> None:
+        raw = "  plain text  "
+        messages = build_text_enhancement_messages(raw)
+
+        assert messages[1] == {"role": "user", "content": raw.strip()}
+        assert isinstance(messages[1]["content"], str)
+
 
 class TestMockedOpenRouterHappyPath:
     """PP-02 mocked OpenRouter happy path."""
 
+    def test_client_no_longer_exposes_enhance_text(self) -> None:
+        assert not hasattr(OpenRouterClient, "enhance_text")
+
     def test_client_posts_expected_request_and_extracts_content(self, caplog) -> None:
         text = f"  {'x' * 101}  "
         full_text = text.strip()
-        model = "deepseek/deepseek-v4-flash"
+        model = "qwen/qwen3.6-flash"
         timeout = 12.5
+        temperature = 0.2
+        reasoning = {"effort": "none", "exclude": True}
 
         response = FakeResponse({"choices": [{"message": {"content": "  polished result  "}}]})
         session = FakeHttpRecorder(response)
         client = OpenRouterClient(session=session)
 
         with caplog.at_level(logging.DEBUG, logger="veespeech.post_processing.openrouter"):
-            result = client.enhance_text(
-                text=text,
+            result = client.call(
+                prompt=SYSTEM_PROMPT,
+                text=full_text,
                 api_key=FAKE_KEY,
                 model=model,
                 timeout=timeout,
+                temperature=temperature,
+                reasoning=reasoning,
             )
 
         assert result == "polished result"
@@ -127,14 +168,87 @@ class TestMockedOpenRouterHappyPath:
 
         payload = kwargs["json"]
         assert payload["model"] == model
-        assert payload["temperature"] == 0.2
-        assert payload["reasoning"] == {"effort": "none", "exclude": True}
+        assert payload["temperature"] == temperature
+        assert payload["reasoning"] == reasoning
 
         messages = payload["messages"]
         assert messages[0] == {"role": "system", "content": SYSTEM_PROMPT}
         assert messages[-1]["content"] == full_text
 
         _assert_no_leaks(caplog.text, FAKE_KEY, full_text)
+
+    def test_client_posts_multimodal_payload_when_image_passed(self, caplog) -> None:
+        text = f"  {'x' * 101}  "
+        full_text = text.strip()
+        image = "data:image/png;base64,abc123"
+        model = "qwen/qwen3.6-flash"
+        timeout = 12.5
+        temperature = 0.2
+        reasoning = {"effort": "none", "exclude": True}
+
+        response = FakeResponse({"choices": [{"message": {"content": "  polished result  "}}]})
+        session = FakeHttpRecorder(response)
+        client = OpenRouterClient(session=session)
+
+        with caplog.at_level(logging.DEBUG, logger="veespeech.post_processing.openrouter"):
+            result = client.call(
+                prompt=SYSTEM_PROMPT,
+                text=full_text,
+                api_key=FAKE_KEY,
+                model=model,
+                timeout=timeout,
+                image=image,
+                temperature=temperature,
+                reasoning=reasoning,
+            )
+
+        assert result == "polished result"
+
+        assert len(session.calls) == 1
+        payload = session.calls[0][2]["json"]
+        messages = payload["messages"]
+        assert messages[0] == {"role": "system", "content": SYSTEM_PROMPT}
+        assert messages[-1]["role"] == "user"
+        content = messages[-1]["content"]
+        assert isinstance(content, list)
+        assert content[0] == {"type": "text", "text": full_text}
+        assert content[1] == {"type": "image_url", "image_url": {"url": image}}
+
+        _assert_no_leaks(caplog.text, FAKE_KEY, full_text)
+
+    def test_reasoning_is_copied_not_mutated(self) -> None:
+        reasoning = {"effort": "none", "exclude": True}
+        response = FakeResponse({"choices": [{"message": {"content": "ok"}}]})
+        session = FakeHttpRecorder(response)
+        client = OpenRouterClient(session=session)
+
+        client.call(
+            prompt=SYSTEM_PROMPT,
+            text="some text",
+            api_key=FAKE_KEY,
+            model="m",
+            reasoning=reasoning,
+        )
+
+        payload = session.calls[0][2]["json"]
+        assert payload["reasoning"] == reasoning
+        assert payload["reasoning"] is not reasoning
+
+    def test_temperature_and_reasoning_are_omitted_when_none(self) -> None:
+        response = FakeResponse({"choices": [{"message": {"content": "ok"}}]})
+        session = FakeHttpRecorder(response)
+        client = OpenRouterClient(session=session)
+
+        client.call(
+            prompt=SYSTEM_PROMPT,
+            text="some text",
+            api_key=FAKE_KEY,
+            model="m",
+        )
+
+        payload = session.calls[0][2]["json"]
+        assert "temperature" not in payload
+        assert "reasoning" not in payload
 
 
 class TestFailureAndMalformedResponses:
@@ -184,17 +298,20 @@ class TestFailureAndMalformedResponses:
     ) -> None:
         text = f"  {'y' * 101}  "
         full_text = text.strip()
-        model = "deepseek/deepseek-v4-flash"
+        model = "qwen/qwen3.6-flash"
 
         client = OpenRouterClient(session=recorder_factory())
 
         with pytest.raises(PostProcessingError):
             with caplog.at_level(logging.DEBUG, logger="veespeech.post_processing.openrouter"):
-                client.enhance_text(
-                    text=text,
+                client.call(
+                    prompt=SYSTEM_PROMPT,
+                    text=full_text,
                     api_key=FAKE_KEY,
                     model=model,
                     timeout=10.0,
+                    temperature=0.2,
+                    reasoning={"effort": "none", "exclude": True},
                 )
 
         _assert_no_leaks(caplog.text, FAKE_KEY, full_text)
